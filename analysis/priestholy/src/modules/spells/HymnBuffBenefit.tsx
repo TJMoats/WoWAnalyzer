@@ -7,6 +7,7 @@ import Analyzer, { Options, SELECTED_PLAYER } from 'parser/core/Analyzer';
 import Events, { ApplyBuffEvent, ApplyBuffStackEvent, EventType } from 'parser/core/Events';
 import LazyLoadStatisticBox from 'parser/ui/LazyLoadStatisticBox';
 import React from 'react';
+import ItemHealingDone from 'parser/ui/ItemHealingDone';
 
 const DIVINE_HYMN_HEALING_INCREASE_PER_STACK = 0.04;
 
@@ -106,13 +107,11 @@ class HymnBuffBenefit extends Analyzer {
   }
 
   statistic() {
-    const fightDuration = this.owner.fightDuration;
-
     return (
       <LazyLoadStatisticBox
         loader={this.load.bind(this)}
         icon={<SpellIcon id={SPELLS.DIVINE_HYMN_CAST.id} />}
-        value={`≈${formatNumber((this.totalHealingFromHymnBuff / fightDuration) * 1000)} HPS`}
+        value={<ItemHealingDone amount={this.totalHealingFromHymnBuff} />}
         label="Hymn Buff Contribution"
         tooltip={
           <>

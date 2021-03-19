@@ -9,6 +9,9 @@ import AbilityTracker from 'parser/shared/modules/AbilityTracker';
 import ItemHealingDone from 'parser/ui/ItemHealingDone';
 import LazyLoadStatisticBox from 'parser/ui/LazyLoadStatisticBox';
 import React from 'react';
+import { Options } from 'parser/core/Module';
+import conduitScaling from 'parser/core/conduitScaling';
+import { LASTING_SPIRIT_BASE_HEALING_INCREASE } from '../../constants';
 
 const GUARDIAN_SPIRIT_HEALING_INCREASE = 0.6;
 
@@ -16,12 +19,32 @@ class GuardianSpirit extends Analyzer {
   static dependencies = {
     abilityTracker: AbilityTracker,
   };
-  // This is an approximation. See the reasoning below.
-  totalHealingFromGSBuff = 0;
   protected abilityTracker!: AbilityTracker;
+
+  totalHealingFromGSBuff: number = 0;
+  totalHealingFromLastingSpirit: number = 0;
+  lastingSpiritActive = false;
+  conduitRank: number = 0;
+
+  constructor(options: Options) {
+    super(options);
+
+    this.conduitRank = this.selectedCombatant.conduitRankBySpellID(SPELLS.LASTING_SPIRIT.id);
+    if (this.conduitRank) {
+      this.lastingSpiritActive = true;
+    }
+  }
+
+  get lastingSpiritHealingIncrease(): number {
+    return conduitScaling(LASTING_SPIRIT_BASE_HEALING_INCREASE, this.conduitRank);
+  }
 
   get totalGSCasts() {
     return this.abilityTracker.getAbility(SPELLS.GUARDIAN_SPIRIT.id).casts;
+  }
+
+  get totalHealing() {
+    return this.totalHealingFromGSBuff + this.totalHealingFromLastingSpirit;
   }
 
   get filter() {
@@ -54,6 +77,20 @@ class GuardianSpirit extends Analyzer {
             (entry.total / (entry.total + (entry.overheal || 0))),
         0,
       );
+
+      if (this.lastingSpiritActive) {
+        this.totalHealingFromLastingSpirit = json.entries.reduce(
+          // Because this is a % healing increase and we are unable to parse each healing event individually for its effective healing,
+          // we need to do some "approximations" using the total overheal in tandem with the total healing. We do not want to naively
+          // assume all healing was fully effective, as this would drastically overweight the power of the buff in situations where a
+          // lot of overhealing occurs.
+          (healingFromBuff, entry: WCLHealing) =>
+            healingFromBuff +
+            (entry.total - entry.total / (1 + this.lastingSpiritHealingIncrease)) *
+              (entry.total / (entry.total + (entry.overheal || 0))),
+          0,
+        );
+      }
     });
   }
 
@@ -62,14 +99,25 @@ class GuardianSpirit extends Analyzer {
       <LazyLoadStatisticBox
         loader={this.load.bind(this)}
         icon={<SpellIcon id={SPELLS.GUARDIAN_SPIRIT.id} />}
-        value={<ItemHealingDone amount={this.totalHealingFromGSBuff} />}
+        value={
+          <>
+            <ItemHealingDone amount={this.totalHealing} />
+          </>
+        }
         label="Guardian Spirit Buff Contribution"
         tooltip={
           <>
-            You casted Guardian Spirit {this.totalGSCasts} times, and it contributed{' '}
+            You casted Guardian Spirit {this.totalGSCasts} times, and it contributed&nbsp;
             {formatNumber(this.totalHealingFromGSBuff)} healing. This includes healing from other
             healers.
             <br />
+            {this.lastingSpiritActive && (
+              <>
+                Lasting Spirit contributed {formatNumber(this.totalHealingFromLastingSpirit)}&nbsp;
+                additional healing.
+                <br />
+              </>
+            )}
             NOTE: This metric uses an approximation to calculate contribution from the buff due to
             technical limitations.
           </>
